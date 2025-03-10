@@ -1,4 +1,4 @@
-# Neo4j HTTPX Data Importer
+# JsonToNeo
 
 This Go script processes **JSON output from HTTPX (Project Discovery)** and imports the data into a **Neo4j database**. It extracts information about **hosts, IP addresses, technologies, and ASN data**, structuring them into a graph database for further analysis.
 
