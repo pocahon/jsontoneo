@@ -91,6 +91,7 @@ func main() {
                 h.status = $status,
                 h.words = $words,
                 h.lines = $lines
+		h.neo4j_label = $url
             RETURN h
             `
 			_, err := tx.Run(hostQuery, map[string]any{
