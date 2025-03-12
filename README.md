@@ -17,10 +17,8 @@ go install github.com/pocahon/jsontoneo@latest
 ```
 ### 2. Configuration
 
-The Neo4j credentials (such as URI, username, and password) are configured in the neo4j-config.yaml file. This file will be created automatically in the following location upon first run:
-```sh
-~/.config/jsontoneo/neo4j-config.yaml
-```
+The Neo4j credentials (such as URI, username, and password) are configured in main.go. This file will be created automatically in the following location upon first run:
+
 You can modify the file to set your Neo4j URI, username, and password. The default content of the configuration file looks like this:
 ```sh
 neo4j:
