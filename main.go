@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -85,7 +86,7 @@ func main() {
             MERGE (h:Host {url: $url})
             SET h.input = $input,
                 h.port = $port,
-                h.title = $title,
+                h.title = $url,
                 h.scheme = $scheme,
                 h.webserver = $webserver,
                 h.status = $status,
