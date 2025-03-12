@@ -3,10 +3,10 @@ package main
 import (
 	"bufio"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -36,24 +36,67 @@ type HttpxResult struct {
 	Resolvers []string `json:"resolvers"`
 }
 
+// init function to create the neo4j-config.yaml file
+func init() {
+	// Pad naar de configuratiemap
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Error getting home directory: %v", err)
+	}
+	configDir := filepath.Join(homeDir, ".config", "jsontoneo")
+	configFile := filepath.Join(configDir, "neo4j-config.yaml")
+
+	// Controleer of de map bestaat, zo niet, maak deze aan
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		log.Fatalf("Error creating config directory: %v", err)
+	}
+
+	// Controleer of het bestand al bestaat
+	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		// Maak het bestand aan als het nog niet bestaat
+		fmt.Println("Creating neo4j config file at", configFile)
+		file, err := os.Create(configFile)
+		if err != nil {
+			log.Fatalf("Error creating config file: %v", err)
+		}
+		defer file.Close()
+
+		// Vul het bestand met de standaardconfiguratie
+		configContent := `
+neo4j:
+  uri: "neo4j://localhost:7687"
+  user: "neo4j"
+  password: "neo4jpass"
+`
+		_, err = file.WriteString(configContent)
+		if err != nil {
+			log.Fatalf("Error writing to config file: %v", err)
+		}
+	} else if err != nil {
+		log.Fatalf("Error checking config file: %v", err)
+	} else {
+		fmt.Println("Configuration file already exists at", configFile)
+	}
+}
+
 func main() {
-	// CLI parameter for the file
+	// CLI parameter voor de file
 	filePath := flag.String("f", "", "Path to the JSON file")
 	flag.Parse()
 
-	// Check if a file was provided
+	// Controleer of een bestand is opgegeven
 	if *filePath == "" {
 		log.Fatal("Usage: go run main.go -f <path to json file>")
 	}
 
-	// Open the provided file
+	// Open het opgegeven bestand
 	file, err := os.Open(*filePath)
 	if err != nil {
 		log.Fatalf("Error opening JSON file: %v", err)
 	}
 	defer file.Close()
 
-	// Connect to Neo4j
+	// Verbinden met Neo4j
 	uri := "neo4j://localhost:7687"
 	user := "neo4j"
 	password := "neo4jpass"
@@ -64,11 +107,11 @@ func main() {
 	}
 	defer driver.Close()
 
-	// Create session without context
+	// Maak een sessie zonder context
 	session := driver.NewSession(neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close()
 
-	// Process JSON line by line
+	// Verwerk JSON regel voor regel
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var result HttpxResult
@@ -80,7 +123,7 @@ func main() {
 		log.Printf("Processing URL: %s", result.URL)
 
 		_, err := session.WriteTransaction(func(tx neo4j.Transaction) (any, error) {
-			// Add Host
+			// Voeg Host toe
 			hostQuery := `
             MERGE (h:Host {url: $url})
             SET h.input = $input,
@@ -108,7 +151,7 @@ func main() {
 				return nil, fmt.Errorf("Host query error: %w", err)
 			}
 
-			// Add IP and relationship with Host
+			// Voeg IP en relatie met Host toe
 			ipQuery := `
             MERGE (i:IP {address: $ip})
             MERGE (h:Host {url: $url})
@@ -122,7 +165,7 @@ func main() {
 				return nil, fmt.Errorf("IP query error: %w", err)
 			}
 
-			// Add Tech nodes and relationships
+			// Voeg Tech nodes en relaties toe
 			for _, tech := range result.Tech {
 				techQuery := `
                 MERGE (t:Tech {name: $tech})
@@ -138,7 +181,7 @@ func main() {
 				}
 			}
 
-			// Add ASN data
+			// Voeg ASN data toe
 			asnQuery := `
             MERGE (a:ASN {number: $as_number})
             SET a.name = $as_name, a.country = $as_country
