@@ -29,7 +29,7 @@ type HttpxResult struct {
 	Scheme    string   `json:"scheme"`
 	Webserver string   `json:"webserver"`
 	Tech      []string `json:"tech"`
-	Host      string   `json:"host"`
+	Host      string   `json:"host"` // Ensure that this field contains an IP address
 	Status    int      `json:"status_code"`
 	Words     int      `json:"words"`
 	Lines     int      `json:"lines"`
@@ -37,16 +37,15 @@ type HttpxResult struct {
 }
 
 func main() {
-	// CLI parameter for the file
-	filePath := flag.String("f", "", "Path to the JSON file")
+	// CLI parameter for the JSON file (expects JSON Lines format)
+	filePath := flag.String("f", "", "Path to the JSON file (JSON Lines format expected)")
 	flag.Parse()
 
-	// Check if a file was provided
 	if *filePath == "" {
 		log.Fatal("Usage: go run main.go -f <path to JSON file>")
 	}
 
-	// Open the provided file
+	// Open the JSON file
 	file, err := os.Open(*filePath)
 	if err != nil {
 		log.Fatalf("Error opening JSON file: %v", err)
@@ -64,11 +63,9 @@ func main() {
 	}
 	defer driver.Close()
 
-	// Create a session without context
 	session := driver.NewSession(neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close()
 
-	// Process JSON line by line
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		var result HttpxResult
@@ -80,19 +77,19 @@ func main() {
 		log.Printf("Processing URL: %s", result.URL)
 
 		_, err := session.WriteTransaction(func(tx neo4j.Transaction) (any, error) {
-			// Add Host
+			// Create or update the Host node (and store the node)
 			hostQuery := `
-            MERGE (h:Host {url: $url})
-            SET h.input = $input,
-                h.port = $port,
-                h.title = $title,
-                h.scheme = $scheme,
-                h.webserver = $webserver,
-                h.status = $status,
-                h.words = $words,
-                h.lines = $lines
-            RETURN h
-            `
+			MERGE (h:Host {url: $url})
+			SET h.input = $input,
+				h.port = $port,
+				h.title = $title,
+				h.scheme = $scheme,
+				h.webserver = $webserver,
+				h.status = $status,
+				h.words = $words,
+				h.lines = $lines
+			RETURN h
+			`
 			_, err := tx.Run(hostQuery, map[string]any{
 				"url":       result.URL,
 				"input":     result.Input,
@@ -108,30 +105,30 @@ func main() {
 				return nil, fmt.Errorf("Host query error: %w", err)
 			}
 
-			// Add IP and relationship with Host
+			// Add the IP node and create the relationship with the Host
 			ipQuery := `
-            MERGE (i:IP {address: $ip})
-            MERGE (h:Host {url: $url})
-            MERGE (h)-[:RESOLVES_TO]->(i)
-            `
+			MATCH (h:Host {url: $url})
+			MERGE (i:IP {address: $ip})
+			MERGE (h)-[:RESOLVES_TO]->(i)
+			`
 			_, err = tx.Run(ipQuery, map[string]any{
-				"ip":  result.Host,
 				"url": result.URL,
+				"ip":  result.Host,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("IP query error: %w", err)
 			}
 
-			// Add Tech nodes and relationships
+			// Add Tech nodes and create the relationships
 			for _, tech := range result.Tech {
 				techQuery := `
-                MERGE (t:Tech {name: $tech})
-                MERGE (h:Host {url: $url})
-                MERGE (h)-[:USES]->(t)
-                `
-				_, err := tx.Run(techQuery, map[string]any{
-					"tech": tech,
+				MATCH (h:Host {url: $url})
+				MERGE (t:Tech {name: $tech})
+				MERGE (h)-[:USES]->(t)
+				`
+				_, err = tx.Run(techQuery, map[string]any{
 					"url":  result.URL,
+					"tech": tech,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("Tech query error: %w", err)
@@ -141,11 +138,11 @@ func main() {
 			// Add ASN data if available
 			if result.ASN.ASNumber != "" {
 				asnQuery := `
-                MERGE (a:ASN {number: $as_number})
-                SET a.name = $as_name, a.country = $as_country
-                MERGE (h:Host {url: $url})
-                MERGE (h)-[:BELONGS_TO]->(a)
-                `
+				MATCH (h:Host {url: $url})
+				MERGE (a:ASN {number: $as_number})
+				SET a.name = $as_name, a.country = $as_country
+				MERGE (h)-[:BELONGS_TO]->(a)
+				`
 				_, err = tx.Run(asnQuery, map[string]any{
 					"as_number":  result.ASN.ASNumber,
 					"as_name":    result.ASN.ASName,
