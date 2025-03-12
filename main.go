@@ -43,7 +43,7 @@ func main() {
 
 	// Check if a file was provided
 	if *filePath == "" {
-		log.Fatal("Usage: go run main.go -f <path to json file>")
+		log.Fatal("Usage: go run main.go -f <path to JSON file>")
 	}
 
 	// Open the provided file
@@ -64,7 +64,7 @@ func main() {
 	}
 	defer driver.Close()
 
-	// Create session without context
+	// Create a session without context
 	session := driver.NewSession(neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite})
 	defer session.Close()
 
@@ -85,7 +85,7 @@ func main() {
             MERGE (h:Host {url: $url})
             SET h.input = $input,
                 h.port = $port,
-                h.title = $url,
+                h.title = $title,
                 h.scheme = $scheme,
                 h.webserver = $webserver,
                 h.status = $status,
@@ -138,22 +138,25 @@ func main() {
 				}
 			}
 
-			// Add ASN data
-			asnQuery := `
-            MERGE (a:ASN {number: $as_number})
-            SET a.name = $as_name, a.country = $as_country
-            MERGE (h:Host {url: $url})
-            MERGE (h)-[:BELONGS_TO]->(a)
-            `
-			_, err = tx.Run(asnQuery, map[string]any{
-				"as_number":  result.ASN.ASNumber,
-				"as_name":    result.ASN.ASName,
-				"as_country": result.ASN.ASCountry,
-				"url":        result.URL,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("ASN query error: %w", err)
+			// Add ASN data if available
+			if result.ASN.ASNumber != "" {
+				asnQuery := `
+                MERGE (a:ASN {number: $as_number})
+                SET a.name = $as_name, a.country = $as_country
+                MERGE (h:Host {url: $url})
+                MERGE (h)-[:BELONGS_TO]->(a)
+                `
+				_, err = tx.Run(asnQuery, map[string]any{
+					"as_number":  result.ASN.ASNumber,
+					"as_name":    result.ASN.ASName,
+					"as_country": result.ASN.ASCountry,
+					"url":        result.URL,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("ASN query error: %w", err)
+				}
 			}
+
 			return nil, nil
 		})
 
@@ -168,5 +171,5 @@ func main() {
 		log.Fatalf("Error reading file: %v", err)
 	}
 
-	fmt.Println("Finished processing JSON data to Neo4j!")
+	fmt.Println("JSON data successfully processed into Neo4j!")
 }
