@@ -3,15 +3,12 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"path/filepath"
-	"flag"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
-	"gopkg.in/yaml.v3"
 )
 
 // Structs to store JSON data
@@ -39,63 +36,7 @@ type HttpxResult struct {
 	Resolvers []string `json:"resolvers"`
 }
 
-// Struct for the Neo4j configuration
-type Neo4jConfig struct {
-	Neo4j struct {
-		URI      string `yaml:"uri"`
-		User     string `yaml:"user"`
-		Password string `yaml:"password"`
-	} `yaml:"neo4j"`
-}
-
-// Function to create the config file if it doesn't exist
-func createConfigIfNotExist() {
-	// Path to the configuration file
-	configDir := filepath.Join(os.Getenv("HOME"), ".config", "jsontoneo")
-	configPath := filepath.Join(configDir, "neo4j-config.yaml")
-
-	// Check if the file already exists
-	if _, err := os.Stat(configPath); err == nil {
-		fmt.Println("Config file already exists, skipping creation.")
-		return
-	}
-
-	// Create the directory if it doesn't exist
-	if err := os.MkdirAll(configDir, os.ModePerm); err != nil {
-		log.Fatalf("Failed to create config directory: %v", err)
-	}
-
-	// Set default config
-	defaultConfig := Neo4jConfig{
-		Neo4j: struct {
-			URI      string `yaml:"uri"`
-			User     string `yaml:"user"`
-			Password string `yaml:"password"`
-		}{
-			URI:      "neo4j://localhost:7687",
-			User:     "neo4j",
-			Password: "neo4jpass",
-		},
-	}
-
-	// Marshal the config into YAML
-	configData, err := yaml.Marshal(&defaultConfig)
-	if err != nil {
-		log.Fatalf("Failed to marshal config: %v", err)
-	}
-
-	// Write the config to the file
-	if err := ioutil.WriteFile(configPath, configData, 0644); err != nil {
-		log.Fatalf("Failed to write config file: %v", err)
-	}
-
-	fmt.Println("Config file created at:", configPath)
-}
-
 func main() {
-	// Create the config file if it doesn't exist
-	createConfigIfNotExist()
-
 	// CLI parameter for the file
 	filePath := flag.String("f", "", "Path to the JSON file")
 	flag.Parse()
@@ -112,20 +53,12 @@ func main() {
 	}
 	defer file.Close()
 
-	// Load Neo4j credentials from the config file
-	configFilePath := filepath.Join(os.Getenv("HOME"), ".config", "jsontoneo", "neo4j-config.yaml")
-	configData, err := ioutil.ReadFile(configFilePath)
-	if err != nil {
-		log.Fatalf("Failed to read config file: %v", err)
-	}
-
-	var config Neo4jConfig
-	if err := yaml.Unmarshal(configData, &config); err != nil {
-		log.Fatalf("Failed to unmarshal config: %v", err)
-	}
-
 	// Connect to Neo4j
-	driver, err := neo4j.NewDriver(config.Neo4j.URI, neo4j.BasicAuth(config.Neo4j.User, config.Neo4j.Password, ""))
+	uri := "neo4j://localhost:7687"
+	user := "neo4j"
+	password := "neo4jpass"
+
+	driver, err := neo4j.NewDriver(uri, neo4j.BasicAuth(user, password, ""))
 	if err != nil {
 		log.Fatalf("Error connecting to Neo4j: %v", err)
 	}
@@ -152,7 +85,7 @@ func main() {
             MERGE (h:Host {url: $url})
             SET h.input = $input,
                 h.port = $port,
-                h.title = $url,
+                h.title = $title,
                 h.scheme = $scheme,
                 h.webserver = $webserver,
                 h.status = $status,
@@ -205,22 +138,28 @@ func main() {
 				}
 			}
 
-			// Add ASN data
-			asnQuery := `
-            MERGE (a:ASN {number: $as_number})
-            SET a.name = $as_name, a.country = $as_country
-            MERGE (h:Host {url: $url})
-            MERGE (h)-[:BELONGS_TO]->(a)
-            `
-			_, err = tx.Run(asnQuery, map[string]any{
-				"as_number":  result.ASN.ASNumber,
-				"as_name":    result.ASN.ASName,
-				"as_country": result.ASN.ASCountry,
-				"url":        result.URL,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("ASN query error: %w", err)
-					}
+			// Check if ASN data is present, and if so, insert it
+			if result.ASN.ASNumber != "" && result.ASN.ASName != "" && result.ASN.ASCountry != "" {
+				// Add ASN data
+				asnQuery := `
+                MERGE (a:ASN {number: $as_number})
+                SET a.name = $as_name, a.country = $as_country
+                MERGE (h:Host {url: $url})
+                MERGE (h)-[:BELONGS_TO]->(a)
+                `
+				_, err = tx.Run(asnQuery, map[string]any{
+					"as_number":  result.ASN.ASNumber,
+					"as_name":    result.ASN.ASName,
+					"as_country": result.ASN.ASCountry,
+					"url":        result.URL,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("ASN query error: %w", err)
+				}
+			} else {
+				log.Printf("ASN data is missing for URL: %s", result.URL)
+			}
+
 			return nil, nil
 		})
 
