@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -139,28 +138,22 @@ func main() {
 				}
 			}
 
-			// Check if ASN data is present, and if so, insert it
-			if result.ASN.ASNumber != "" && result.ASN.ASName != "" && result.ASN.ASCountry != "" {
-				// Add ASN data
-				asnQuery := `
-                MERGE (a:ASN {number: $as_number})
-                SET a.name = $as_name, a.country = $as_country
-                MERGE (h:Host {url: $url})
-                MERGE (h)-[:BELONGS_TO]->(a)
-                `
-				_, err = tx.Run(asnQuery, map[string]any{
-					"as_number":  result.ASN.ASNumber,
-					"as_name":    result.ASN.ASName,
-					"as_country": result.ASN.ASCountry,
-					"url":        result.URL,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("ASN query error: %w", err)
-				}
-			} else {
-				log.Printf("ASN data is missing for URL: %s", result.URL)
+			// Add ASN data
+			asnQuery := `
+            MERGE (a:ASN {number: $as_number})
+            SET a.name = $as_name, a.country = $as_country
+            MERGE (h:Host {url: $url})
+            MERGE (h)-[:BELONGS_TO]->(a)
+            `
+			_, err = tx.Run(asnQuery, map[string]any{
+				"as_number":  result.ASN.ASNumber,
+				"as_name":    result.ASN.ASName,
+				"as_country": result.ASN.ASCountry,
+				"url":        result.URL,
+			})
+			if err != nil {
+				return nil, fmt.Errorf("ASN query error: %w", err)
 			}
-
 			return nil, nil
 		})
 
