@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"flag"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"gopkg.in/yaml.v3"
@@ -219,7 +220,7 @@ func main() {
 			})
 			if err != nil {
 				return nil, fmt.Errorf("ASN query error: %w", err)
-			}
+					}
 			return nil, nil
 		})
 
