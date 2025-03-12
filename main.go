@@ -82,7 +82,7 @@ func main() {
 			MERGE (h:Host {url: $url})
 			SET h.input = $input,
 				h.port = $port,
-				h.title = $title,
+				h.title = $url,
 				h.scheme = $scheme,
 				h.webserver = $webserver,
 				h.status = $status,
