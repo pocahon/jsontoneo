@@ -28,7 +28,7 @@ neo4j:
   user: "neo4j"
   password: "neo4jpass"
 ```
-3. Usage
+### 3. Usage
 
 After installation, you can run the script by specifying the path to the JSON file you wish to process. The script will automatically import the data into your Neo4j database, creating nodes and relationships based on the extracted information.
 ```sh
