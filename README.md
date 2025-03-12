@@ -14,3 +14,22 @@ This Go script processes **JSON output from HTTPX (Project Discovery)** and impo
 Install directly using Go and remember that the password in the main.go file needs to be changed to the password of your Neo4j setup:  
 ```sh
 go install github.com/pocahon/jsontoneo@latest
+```
+### 2. Configuration
+
+The Neo4j credentials (such as URI, username, and password) are configured in the neo4j-config.yaml file. This file will be created automatically in the following location upon first run:
+```sh
+~/.config/jsontoneo/neo4j-config.yaml
+```
+You can modify the file to set your Neo4j URI, username, and password. The default content of the configuration file looks like this:
+```sh
+neo4j:
+  uri: "neo4j://localhost:7687"
+  user: "neo4j"
+  password: "neo4jpass"
+```
+3. Usage
+
+After installation, you can run the script by specifying the path to the JSON file you wish to process. The script will automatically import the data into your Neo4j database, creating nodes and relationships based on the extracted information.
+```sh
+jsontoneo -f /path/to/your/httpx-output.json
