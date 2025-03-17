@@ -7,11 +7,21 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
+	"gopkg.in/yaml.v2"
 )
 
-// Structs to store JSON data
+// Struct voor de Neo4j configuratie
+type Neo4jConfig struct {
+	URI      string `yaml:"uri"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+}
+
+// Structs om JSON data op te slaan
 type ASN struct {
 	ASNumber  string   `json:"as_number"`
 	ASName    string   `json:"as_name"`
@@ -29,7 +39,7 @@ type HttpxResult struct {
 	Scheme    string   `json:"scheme"`
 	Webserver string   `json:"webserver"`
 	Tech      []string `json:"tech"`
-	Host      string   `json:"host"` // Ensure that this field contains an IP address
+	Host      string   `json:"host"` // Dit veld bevat het IP-adres
 	Status    int      `json:"status_code"`
 	Words     int      `json:"words"`
 	Lines     int      `json:"lines"`
@@ -37,7 +47,7 @@ type HttpxResult struct {
 }
 
 func main() {
-	// CLI parameter for the JSON file (expects JSON Lines format)
+	// CLI-parameter voor het JSON bestand (JSON Lines formaat wordt verwacht)
 	filePath := flag.String("f", "", "Path to the JSON file (JSON Lines format expected)")
 	flag.Parse()
 
@@ -45,19 +55,83 @@ func main() {
 		log.Fatal("Usage: go run main.go -f <path to JSON file>")
 	}
 
-	// Open the JSON file
+	// Bepaal de configuratie-locatie
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Fatalf("Error getting user home directory: %v", err)
+	}
+	configDir := filepath.Join(home, ".config", "jsontoneo")
+	configPath := filepath.Join(configDir, "neo4j_config.yaml")
+
+	var config Neo4jConfig
+
+	// Als het config-bestand nog niet bestaat, maak de map aan en vraag de credentials op
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		err = os.MkdirAll(configDir, 0700)
+		if err != nil {
+			log.Fatalf("Error creating config directory: %v", err)
+		}
+
+		reader := bufio.NewReader(os.Stdin)
+
+		fmt.Print("Enter Neo4j URI [default neo4j://localhost:7687]: ")
+		uriInput, _ := reader.ReadString('\n')
+		uriInput = strings.TrimSpace(uriInput)
+		if uriInput == "" {
+			uriInput = "neo4j://localhost:7687"
+		}
+
+		fmt.Print("Enter Neo4j Username [default neo4j]: ")
+		usernameInput, _ := reader.ReadString('\n')
+		usernameInput = strings.TrimSpace(usernameInput)
+		if usernameInput == "" {
+			usernameInput = "neo4j"
+		}
+
+		fmt.Print("Enter Neo4j Password [default neo4jpass]: ")
+		passwordInput, _ := reader.ReadString('\n')
+		passwordInput = strings.TrimSpace(passwordInput)
+		if passwordInput == "" {
+			passwordInput = "neo4jpass"
+		}
+
+		config = Neo4jConfig{
+			URI:      uriInput,
+			Username: usernameInput,
+			Password: passwordInput,
+		}
+
+		yamlData, err := yaml.Marshal(&config)
+		if err != nil {
+			log.Fatalf("Error marshalling YAML: %v", err)
+		}
+
+		err = os.WriteFile(configPath, yamlData, 0600)
+		if err != nil {
+			log.Fatalf("Error writing config file: %v", err)
+		}
+		fmt.Printf("Configuration file created at %s\n", configPath)
+	} else {
+		// Lees de configuratie uit het bestand
+		yamlData, err := os.ReadFile(configPath)
+		if err != nil {
+			log.Fatalf("Error reading config file: %v", err)
+		}
+		err = yaml.Unmarshal(yamlData, &config)
+		if err != nil {
+			log.Fatalf("Error parsing config file: %v", err)
+		}
+	}
+
+	// Open het JSON bestand
 	file, err := os.Open(*filePath)
 	if err != nil {
 		log.Fatalf("Error opening JSON file: %v", err)
 	}
 	defer file.Close()
 
-	// Connect to Neo4j
-	uri := "neo4j://localhost:7687"
-	user := "neo4j"
-	password := "neo4jpass"
-
-	driver, err := neo4j.NewDriver(uri, neo4j.BasicAuth(user, password, ""))
+	// Maak verbinding met Neo4j met de credentials uit het configuratiebestand
+	driver, err := neo4j.NewDriver(config.URI, neo4j.BasicAuth(config.Username, config.Password, ""))
 	if err != nil {
 		log.Fatalf("Error connecting to Neo4j: %v", err)
 	}
@@ -77,12 +151,12 @@ func main() {
 		log.Printf("Processing URL: %s", result.URL)
 
 		_, err := session.WriteTransaction(func(tx neo4j.Transaction) (any, error) {
-			// Create or update the Host node (and store the node)
+			// Maak of update de Host node en sla deze op
 			hostQuery := `
 			MERGE (h:Host {url: $url})
 			SET h.input = $input,
 				h.port = $port,
-				h.title = $url,
+				h.title = $title,
 				h.scheme = $scheme,
 				h.webserver = $webserver,
 				h.status = $status,
@@ -105,7 +179,7 @@ func main() {
 				return nil, fmt.Errorf("Host query error: %w", err)
 			}
 
-			// Add the IP node and create the relationship with the Host
+			// Voeg de IP node toe en maak de relatie met de Host
 			ipQuery := `
 			MATCH (h:Host {url: $url})
 			MERGE (i:IP {address: $ip})
@@ -119,7 +193,7 @@ func main() {
 				return nil, fmt.Errorf("IP query error: %w", err)
 			}
 
-			// Add Tech nodes and create the relationships
+			// Voeg Tech nodes toe en maak de relaties
 			for _, tech := range result.Tech {
 				techQuery := `
 				MATCH (h:Host {url: $url})
@@ -135,7 +209,7 @@ func main() {
 				}
 			}
 
-			// Add ASN data if available
+			// Voeg ASN data toe als beschikbaar
 			if result.ASN.ASNumber != "" {
 				asnQuery := `
 				MATCH (h:Host {url: $url})
