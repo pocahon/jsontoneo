@@ -11,7 +11,7 @@ This Go script processes **JSON output from HTTPX (Project Discovery)** and impo
 ## 🛠️ Installation & Usage
 
 ### 1. Installation
-Install directly using Go and remember that the password in the main.go file needs to be changed to the password of your Neo4j setup:  
+Install directly using Go:  
 ```sh
 go install github.com/pocahon/jsontoneo@latest
 ```
