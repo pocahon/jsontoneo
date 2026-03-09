@@ -14,14 +14,12 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Struct voor de Neo4j configuratie
 type Neo4jConfig struct {
 	URI      string `yaml:"uri"`
 	Username string `yaml:"username"`
 	Password string `yaml:"password"`
 }
 
-// Structs om JSON data op te slaan
 type ASN struct {
 	ASNumber  string   `json:"as_number"`
 	ASName    string   `json:"as_name"`
@@ -39,7 +37,7 @@ type HttpxResult struct {
 	Scheme    string   `json:"scheme"`
 	Webserver string   `json:"webserver"`
 	Tech      []string `json:"tech"`
-	Host      string   `json:"host"` // Dit veld bevat het IP-adres
+	Host      string   `json:"host"`
 	Status    int      `json:"status_code"`
 	Words     int      `json:"words"`
 	Lines     int      `json:"lines"`
@@ -47,7 +45,6 @@ type HttpxResult struct {
 }
 
 func main() {
-	// CLI-parameter voor het JSON bestand (JSON Lines formaat wordt verwacht)
 	filePath := flag.String("f", "", "Path to the JSON file (JSON Lines format expected)")
 	flag.Parse()
 
@@ -55,7 +52,6 @@ func main() {
 		log.Fatal("Usage: go run main.go -f <path to JSON file>")
 	}
 
-	// Bepaal de configuratie-locatie
 	home, err := os.UserHomeDir()
 	if err != nil {
 		log.Fatalf("Error getting user home directory: %v", err)
@@ -65,7 +61,6 @@ func main() {
 
 	var config Neo4jConfig
 
-	// Als het config-bestand nog niet bestaat, maak de map aan en vraag de credentials op
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		err = os.MkdirAll(configDir, 0700)
 		if err != nil {
@@ -112,7 +107,6 @@ func main() {
 		}
 		fmt.Printf("Configuration file created at %s\n", configPath)
 	} else {
-		// Lees de configuratie uit het bestand
 		yamlData, err := os.ReadFile(configPath)
 		if err != nil {
 			log.Fatalf("Error reading config file: %v", err)
@@ -123,14 +117,12 @@ func main() {
 		}
 	}
 
-	// Open het JSON bestand
 	file, err := os.Open(*filePath)
 	if err != nil {
 		log.Fatalf("Error opening JSON file: %v", err)
 	}
 	defer file.Close()
 
-	// Maak verbinding met Neo4j met de credentials uit het configuratiebestand
 	driver, err := neo4j.NewDriver(config.URI, neo4j.BasicAuth(config.Username, config.Password, ""))
 	if err != nil {
 		log.Fatalf("Error connecting to Neo4j: %v", err)
@@ -151,22 +143,27 @@ func main() {
 		log.Printf("Processing URL: %s", result.URL)
 
 		_, err := session.WriteTransaction(func(tx neo4j.Transaction) (any, error) {
-			// Maak of update de Host node en sla deze op
+			// Host node met alle relevante properties
 			hostQuery := `
 			MERGE (h:Host {url: $url})
-			SET h.input = $input,
-				h.port = $port,
-				h.title = $title,
-				h.scheme = $scheme,
-				h.webserver = $webserver,
-				h.status = $status,
-				h.words = $words,
-				h.lines = $lines
+			SET h.input     = $input,
+			    h.ip        = $ip,
+			    h.port      = $port,
+			    h.title     = $title,
+			    h.scheme    = $scheme,
+			    h.webserver = $webserver,
+			    h.status    = $status,
+			    h.words     = $words,
+			    h.lines     = $lines,
+			    h.tech      = $tech,
+			    h.resolvers = $resolvers,
+			    h.timestamp = $timestamp
 			RETURN h
 			`
 			_, err := tx.Run(hostQuery, map[string]any{
 				"url":       result.URL,
 				"input":     result.Input,
+				"ip":        result.Host,
 				"port":      result.Port,
 				"title":     result.Title,
 				"scheme":    result.Scheme,
@@ -174,53 +171,30 @@ func main() {
 				"status":    result.Status,
 				"words":     result.Words,
 				"lines":     result.Lines,
+				"tech":      result.Tech,
+				"resolvers": result.Resolvers,
+				"timestamp": result.Timestamp,
 			})
 			if err != nil {
 				return nil, fmt.Errorf("Host query error: %w", err)
 			}
 
-			// Voeg de IP node toe en maak de relatie met de Host
-			ipQuery := `
-			MATCH (h:Host {url: $url})
-			MERGE (i:IP {address: $ip})
-			MERGE (h)-[:RESOLVES_TO]->(i)
-			`
-			_, err = tx.Run(ipQuery, map[string]any{
-				"url": result.URL,
-				"ip":  result.Host,
-			})
-			if err != nil {
-				return nil, fmt.Errorf("IP query error: %w", err)
-			}
-
-			// Voeg Tech nodes toe en maak de relaties
-			for _, tech := range result.Tech {
-				techQuery := `
-				MATCH (h:Host {url: $url})
-				MERGE (t:Tech {name: $tech})
-				MERGE (h)-[:USES]->(t)
-				`
-				_, err = tx.Run(techQuery, map[string]any{
-					"url":  result.URL,
-					"tech": tech,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("Tech query error: %w", err)
-				}
-			}
-
-			// Voeg ASN data toe als beschikbaar
+			// ASN node met relatie naar Host, alleen als ASN beschikbaar is
 			if result.ASN.ASNumber != "" {
 				asnQuery := `
 				MATCH (h:Host {url: $url})
 				MERGE (a:ASN {number: $as_number})
-				SET a.name = $as_name, a.country = $as_country
+				SET a.name    = $as_name,
+				    a.country = $as_country,
+				    a.range   = $as_range
 				MERGE (h)-[:BELONGS_TO]->(a)
 				`
 				_, err = tx.Run(asnQuery, map[string]any{
+					"url":        result.URL,
 					"as_number":  result.ASN.ASNumber,
 					"as_name":    result.ASN.ASName,
 					"as_country": result.ASN.ASCountry,
+					"as_range":   result.ASN.ASRange,
 					"url":        result.URL,
 				})
 				if err != nil {
