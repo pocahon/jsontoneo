@@ -195,7 +195,6 @@ func main() {
 					"as_name":    result.ASN.ASName,
 					"as_country": result.ASN.ASCountry,
 					"as_range":   result.ASN.ASRange,
-					"url":        result.URL,
 				})
 				if err != nil {
 					return nil, fmt.Errorf("ASN query error: %w", err)
